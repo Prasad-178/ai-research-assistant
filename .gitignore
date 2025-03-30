@@ -1,0 +1,17 @@
+# PDM / Virtualenv
+.venv/
+__pypackages__/
+
+# Environment variables
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE / OS specific
+.idea/
+.vscode/
+*.DS_Store
