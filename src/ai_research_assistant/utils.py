@@ -4,6 +4,7 @@ import openai
 from pypdf import PdfReader
 import os
 from dotenv import load_dotenv
+import uuid
 
 load_dotenv()
 
@@ -37,29 +38,31 @@ def chunk_text(text: str, chunk_size: int = 1000) -> List[Dict[str, str]]:
     chunks = []
     current_chunk = []
     current_size = 0
-    
+    id = 1
     for word in words:
         current_size += len(word) + 1  # +1 for space
         if current_size > chunk_size:
-            chunks.append({"text": " ".join(current_chunk)})
+            chunks.append({"_id": str(id), "text": " ".join(current_chunk)})
+            id += 1
             current_chunk = [word]
             current_size = len(word)
         else:
             current_chunk.append(word)
-    
+
     if current_chunk:
-        chunks.append({"text": " ".join(current_chunk)})
-    
+        chunks.append({"_id": str(id), "text": " ".join(current_chunk)})
+        id += 1
+
     return chunks
 
-def index_document(text: str, metadata: Dict[str, Any] = None):
+def index_document(text: str):
     """Index document chunks in Pinecone"""
     chunks = chunk_text(text)
     index.upsert_records(
       namespace="",
       records=chunks
     )
-    
+
 
 def search_documents(query: str, top_k: int = 3) -> List[Dict]:
     """Search for relevant documents in Pinecone"""
@@ -69,10 +72,10 @@ def search_documents(query: str, top_k: int = 3) -> List[Dict]:
       },
       "top_k": top_k,
     }
-    
+
     results = index.search(
       namespace="",
       query=query_payload
     )
-    
+
     return results

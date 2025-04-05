@@ -1,39 +1,38 @@
 from langchain_openai import ChatOpenAI
 import os
-from tools import arxiv_search
+from tools import arxiv_search, firecrawl_search, multiply, add, subtract, divide
 from langgraph.graph import MessagesState, START, StateGraph
-from langgraph.prebuilt import tools_condition, ToolNode
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langgraph.prebuilt import create_react_agent
+from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph.state import CompiledStateGraph
+import uuid
 
-llm = ChatOpenAI(model="gpt-4o-mini", api_key=os.getenv("OPENAI_API_KEY"))
-tools = [arxiv_search]
+def create_agent() -> tuple[CompiledStateGraph, RunnableConfig]:
+  llm = ChatOpenAI(model="gpt-4o", api_key=os.getenv("OPENAI_API_KEY"))
+  tools = [arxiv_search, firecrawl_search, multiply, add, subtract, divide]
 
-llm_with_tools = llm.bind_tools(tools)
+  system_message = SystemMessage(
+    content="You are a helpful research assistant tasked with summarizing papers and articles and helping with research."
+  )
 
-system_message = SystemMessage(
-  content="You are a helpful research assistant tasked with summarizing papers and articles and helping with research."
-)
+  memory = MemorySaver()
+  react_agent = create_react_agent(model=llm, tools=tools, checkpointer=memory, prompt=system_message)
 
-def assistant(state: MessagesState):
-  return {
-    "messages": [
-      llm_with_tools.invoke([system_message] + state["messages"])
-    ]
-  }
+  config = RunnableConfig(
+    run_name="research_assistant",
+    run_id=str(uuid.uuid4()),
+    configurable={
+      "thread_id": "1"
+    }
+  )
 
-builder = StateGraph(MessagesState)
+  return react_agent, config
 
-builder.add_node("assistant", assistant)
-builder.add_node("tools", ToolNode(tools))
+def invoke(agent: CompiledStateGraph, config: RunnableConfig, message: str):
+  return agent.stream({"messages": [HumanMessage(content=message)]}, config, stream_mode="values")
 
-builder.add_edge(START, "assistant")
-builder.add_conditional_edges(
-    "assistant",
-    # If the latest message (result) from assistant is a tool call -> tools_condition routes to tools
-    # If the latest message (result) from assistant is a not a tool call -> tools_condition routes to END
-    tools_condition,
-)
-builder.add_edge("tools", "assistant")
-graph = builder.compile()
+# agent, config = create_agent()
+# result = agent.invoke({"messages": [HumanMessage(content='Summarize recent advancements in using Graph Neural Networks for drug discovery')]}, config)
 
-print(graph._draw_graph)
