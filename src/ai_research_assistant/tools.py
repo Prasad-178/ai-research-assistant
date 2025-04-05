@@ -4,6 +4,7 @@ from typing import Union, List
 from langchain_community.utilities import ArxivAPIWrapper
 from langchain_core.tools import tool
 from firecrawl import FirecrawlApp
+from utils import search_documents
 
 dotenv.load_dotenv()
 if not os.environ.get("TAVILY_API_KEY"):
@@ -61,6 +62,18 @@ def firecrawl_search(url: Union[str, List[str]]) -> str:
 
   return "\n\n".join(overall_content)
 
-# result = arxiv_search("Summarize recent advancements in using Graph Neural Networks for drug discovery")
-# print(result)
-# print(type(result))
+@tool
+def search_uploaded_documents(query: str) -> str:
+  """Search within the documents uploaded by the user for relevant information."""
+  results = search_documents(query, top_k=10)
+  if not results:
+    print("No relevant information found in the uploaded documents.")
+    return "No relevant information found in the uploaded documents."
+
+  context = "\n---\n".join([
+      hit.get('fields', {}).get('text', '')
+      for hit in results.get('result', {}).get('hits', [])
+      if hit.get('fields', {}).get('text') # Ensure text is not empty
+  ])
+  return f"Found the following information in the uploaded documents:\n{context}"
+

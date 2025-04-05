@@ -73,6 +73,7 @@ def search_documents(query: str, top_k: int = 3) -> List[Dict]:
       "top_k": top_k,
     }
 
+    print("Searching for documents...")
     results = index.search(
       namespace="",
       query=query_payload
