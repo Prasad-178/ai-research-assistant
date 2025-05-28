@@ -1,7 +1,7 @@
 # Use an NVIDIA CUDA base image. Choose a version compatible with llama-cpp-python's requirements
 # and your g4dn.xlarge instance (Tesla T4 typically supports CUDA 11.x, 12.x).
 # Check llama-cpp-python's documentation for recommended CUDA versions.
-FROM nvidia/cuda:12.1.1-devel-ubuntu22.04
+FROM nvidia/cuda:12.2.2-devel-ubuntu22.04
 
 # Set environment variables to prevent interactive prompts during package installations
 ENV DEBIAN_FRONTEND=noninteractive
@@ -57,9 +57,9 @@ RUN LLAMA_CPP_PYTHON_VERSION="0.3.8" && \
     \
     # Install llama-cpp-python using uv pip, mirroring the GitHub issue's successful approach
     # The [server] extra is for FastAPI server components.
-    uv pip install --no-cache --force-reinstall "llama-cpp-python==${LLAMA_CPP_PYTHON_VERSION}" \
+    uv pip install --system --no-cache --force-reinstall "llama-cpp-python==${LLAMA_CPP_PYTHON_VERSION}" \
         --index-url https://pypi.org/simple \
-        --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121/ \
+        --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu122/ \
         --index-strategy unsafe-best-match && \
     \
     # Verify llama-cpp-python installation and CUDA support
