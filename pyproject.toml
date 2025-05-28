@@ -5,8 +5,17 @@ description = "Default template for PDM package"
 authors = [
     {name = "Prasad-178", email = "prasadjs178@gmail.com"},
 ]
-dependencies = ["langgraph>=0.3.21", "openai>=1.69.0", "pypdf>=5.4.0", "python-dotenv>=1.1.0", "streamlit>=1.44.0", "pinecone>=6.0.2", "langchain-core>=0.3.49", "langchain-community>=0.3.20", "langchain>=0.3.21", "arxiv>=2.1.3", "langchain-openai>=0.3.11", "langchain-tavily>=0.1.5", "composio-langgraph>=0.7.4", "firecrawl>=1.15.0"]
-requires-python = "==3.12.*"
+dependencies = [
+    "langgraph>=0.3.21", 
+    "openai>=1.69.0", 
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.23.0",
+    "llama-cpp-python[server]>=0.3.9",
+    "boto3>=1.28.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0"
+]
+requires-python = "==3.10.*"
 readme = "README.md"
 license = {text = "MIT"}
 
