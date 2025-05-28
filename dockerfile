@@ -18,6 +18,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     cmake \
     build-essential \
+    ocl-icd-opencl-dev opencl-headers clinfo \
+    libclblast-dev libopenblas-dev \
+    && mkdir -p /etc/OpenCL/vendors \
+    && echo "libnvidia-opencl.so.1" > /etc/OpenCL/vendors/nvidia.icd \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Make python3.10 the default python and pip
@@ -34,6 +39,9 @@ RUN pip install --no-cache-dir uv
 # Copy project configuration first
 COPY pyproject.toml ./
 # pdm.lock is intentionally not copied to allow PDM to resolve based on pyproject.toml in the build env
+
+# Initialize uv project (as per GitHub issue)
+RUN uv init .
 
 # Set environment variables for CUDA compilation and general build
 ENV CUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda
@@ -55,14 +63,14 @@ RUN LLAMA_CPP_PYTHON_VERSION="0.3.8" && \
     echo "CC: ${CC}" && \
     echo "CXX: ${CXX}" && \
     \
-    # Install llama-cpp-python using uv pip, mirroring the GitHub issue's successful approach
-    # The [server] extra is for FastAPI server components.
-    uv pip install --system --no-cache --force-reinstall "llama-cpp-python==${LLAMA_CPP_PYTHON_VERSION}" \
+    # Install llama-cpp-python using uv pip, strictly following GitHub issue's successful approach
+    # All environment variables for this specific install are set within this RUN command's scope
+    uv pip install --system --upgrade --no-cache --force-reinstall "llama-cpp-python[server]==${LLAMA_CPP_PYTHON_VERSION}" \
         --index-url https://pypi.org/simple \
         --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu122/ \
         --index-strategy unsafe-best-match && \
     \
-    # Verify llama-cpp-python installation and CUDA support
+    # Verify llama-cpp-python installation
     echo "Verifying llama-cpp-python installation..." && \
     python -m llama_cpp.server --help > /dev/null && \
     # The following python import test is a good check but might fail if runtime CUDA libs aren't perfectly set up yet for this check
