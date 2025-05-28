@@ -40,9 +40,6 @@ RUN pip install --no-cache-dir uv
 COPY pyproject.toml ./
 # pdm.lock is intentionally not copied to allow PDM to resolve based on pyproject.toml in the build env
 
-# Initialize uv project (as per GitHub issue)
-RUN uv init .
-
 # Set environment variables for CUDA compilation and general build
 ENV CUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda
 # Set LD_LIBRARY_PATH in a single layer to ensure proper expansion.
