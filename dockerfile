@@ -57,7 +57,7 @@ RUN LLAMA_CPP_PYTHON_VERSION="0.3.8" && \
     \
     # Install llama-cpp-python using uv pip, mirroring the GitHub issue's successful approach
     # The [server] extra is for FastAPI server components.
-    uv pip install --no-cache --force-reinstall "llama-cpp-python[server]==${LLAMA_CPP_PYTHON_VERSION}" \
+    uv pip install --no-cache --force-reinstall "llama-cpp-python==${LLAMA_CPP_PYTHON_VERSION}" \
         --index-url https://pypi.org/simple \
         --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121/ \
         --index-strategy unsafe-best-match && \
