@@ -28,27 +28,81 @@ RUN ln -sf /usr/bin/python3.10 /usr/bin/python && \
 # Install PDM
 RUN pip install --no-cache-dir pdm
 
-# Copy project configuration
+# Install uv
+RUN pip install --no-cache-dir uv
+
+# Copy project configuration first
 COPY pyproject.toml ./
+# pdm.lock is intentionally not copied to allow PDM to resolve based on pyproject.toml in the build env
 
-# Set CMAKE_ARGS to build llama-cpp-python with CUDA support.
-# This must be set *before* pdm install if llama-cpp-python is compiled during install.
-ENV CMAKE_ARGS="-DGGML_CUDA=ON"
-ENV FORCE_CMAKE=1
-ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
+# Set environment variables for CUDA compilation and general build
+ENV CUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda
+# Set LD_LIBRARY_PATH in a single layer to ensure proper expansion.
+# This includes CUDA paths and GCC library paths as suggested by the GitHub issue.
+RUN LLAMA_CPP_PYTHON_VERSION="0.3.8" && \
+    GCC_LIB_PATH="/usr/lib/gcc/$(gcc -dumpmachine)/$(gcc -dumpversion)" && \
+    export LD_LIBRARY_PATH="/usr/local/cuda/lib64:/usr/local/cuda/lib64/stubs:${GCC_LIB_PATH}:${LD_LIBRARY_PATH}" && \
+    echo "Updated LD_LIBRARY_PATH: $LD_LIBRARY_PATH" && \
+    \
+    # Set compiler and CMake flags for llama-cpp-python installation
+    export CC=/usr/bin/gcc && \
+    export CXX=/usr/bin/g++ && \
+    export FORCE_CMAKE=1 && \
+    # For g4dn (Tesla T4), CUDA compute capability is 7.5. Broader set could be "70;75;80;86;89"
+    export CMAKE_ARGS="-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=75 -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TESTS=OFF" && \
+    echo "CMAKE_ARGS: ${CMAKE_ARGS}" && \
+    echo "FORCE_CMAKE: ${FORCE_CMAKE}" && \
+    echo "CC: ${CC}" && \
+    echo "CXX: ${CXX}" && \
+    \
+    # Install llama-cpp-python using uv pip, mirroring the GitHub issue's successful approach
+    # The [server] extra is for FastAPI server components.
+    uv pip install --no-cache --force-reinstall "llama-cpp-python[server]==${LLAMA_CPP_PYTHON_VERSION}" \
+        --index-url https://pypi.org/simple \
+        --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121/ \
+        --index-strategy unsafe-best-match && \
+    \
+    # Verify llama-cpp-python installation and CUDA support
+    echo "Verifying llama-cpp-python installation..." && \
+    python -m llama_cpp.server --help > /dev/null && \
+    # The following python import test is a good check but might fail if runtime CUDA libs aren't perfectly set up yet for this check
+    # python -c "from llama_cpp import llama_cpp; print(llama_cpp.ggml_cpu_has_avx())" && \
+    echo "llama-cpp-python installation step completed."
 
-# Ensure libcuda.so.1 can be found by the linker by creating a symlink to libcuda.so.
-# The nvidia/cuda devel images provide /usr/local/cuda/lib64/libcuda.so (pointing to a stub library).
-RUN if [ -f /usr/local/cuda/lib64/libcuda.so ]; then \
-        ln -sf /usr/local/cuda/lib64/libcuda.so /usr/local/cuda/lib64/libcuda.so.1 && \
-        echo "Successfully symlinked /usr/local/cuda/lib64/libcuda.so to /usr/local/cuda/lib64/libcuda.so.1"; \
+# Ensure libcuda.so.1 is available in /usr/local/cuda/lib64, pointing to the stub.
+# This is crucial for the linker to find it at runtime.
+# This RUN layer is separate to ensure LD_LIBRARY_PATH from an earlier layer doesn't affect it if it were combined.
+# However, the LD_LIBRARY_PATH set by ENV should persist for subsequent RUN layers.
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda/lib64/stubs:/usr/lib/gcc/x86_64-linux-gnu/11:${LD_LIBRARY_PATH}
+RUN TARGET_CUDA_LIB_DIR="/usr/local/cuda/lib64" && \
+    mkdir -p "$TARGET_CUDA_LIB_DIR" && \
+    STUB_PATH_ABS_PRIMARY="$CUDA_TOOLKIT_ROOT_DIR/lib64/stubs/libcuda.so" && \
+    STUB_PATH_ABS_SECONDARY="$CUDA_TOOLKIT_ROOT_DIR/lib64/libcuda.so" && \
+    SYMLINK_TARGET="$TARGET_CUDA_LIB_DIR/libcuda.so.1" && \
+    echo "Attempting to create symlink $SYMLINK_TARGET..." && \
+    if [ -f "$STUB_PATH_ABS_PRIMARY" ]; then \
+        ln -sf "$STUB_PATH_ABS_PRIMARY" "$SYMLINK_TARGET" && echo "Symlinked $STUB_PATH_ABS_PRIMARY to $SYMLINK_TARGET"; \
+    elif [ -f "$STUB_PATH_ABS_SECONDARY" ]; then \
+        ln -sf "$STUB_PATH_ABS_SECONDARY" "$SYMLINK_TARGET" && echo "Symlinked $STUB_PATH_ABS_SECONDARY to $SYMLINK_TARGET"; \
     else \
-        echo "Warning: /usr/local/cuda/lib64/libcuda.so not found. Cannot create libcuda.so.1 symlink. This might lead to build issues."; \
+        echo "Error: CUDA stub libcuda.so not found in $STUB_PATH_ABS_PRIMARY or $STUB_PATH_ABS_SECONDARY. Cannot create $SYMLINK_TARGET." >&2; \
+        exit 1; \
+    fi && \
+    echo "Verifying symlink $SYMLINK_TARGET:" && ls -l "$SYMLINK_TARGET" && \
+    echo "Target of symlink $(readlink -f "$SYMLINK_TARGET") details:" && ls -l "$(readlink -f "$SYMLINK_TARGET")" && \
+    echo "Contents of $TARGET_CUDA_LIB_DIR:" && ls -l "$TARGET_CUDA_LIB_DIR" && \
+    echo "Contents of $CUDA_TOOLKIT_ROOT_DIR/lib64/stubs/ (if it exists):" && (ls -l "$CUDA_TOOLKIT_ROOT_DIR/lib64/stubs/" || echo "Directory not found or empty") && \
+    # Also ensure libnvidia-ml.so.1 stub is linked if present (good practice)
+    STUB_NVMKL_PATH_ABS="$CUDA_TOOLKIT_ROOT_DIR/lib64/stubs/libnvidia-ml.so" && \
+    SYMLINK_NVMKL_TARGET="$TARGET_CUDA_LIB_DIR/libnvidia-ml.so.1" && \
+    if [ -f "$STUB_NVMKL_PATH_ABS" ]; then \
+        ln -sf "$STUB_NVMKL_PATH_ABS" "$SYMLINK_NVMKL_TARGET" && echo "Symlinked $STUB_NVMKL_PATH_ABS to $SYMLINK_NVMKL_TARGET"; \
+    else \
+        echo "Info: CUDA stub libnvidia-ml.so not found in $STUB_NVMKL_PATH_ABS. libnvidia-ml.so.1 link not created (this may be okay)."; \
     fi
 
-# Install project dependencies using PDM with increased verbosity.
-# PDM will use pyproject.toml. If pdm.lock is not found (because we removed the COPY for it),
-# PDM will resolve dependencies and create pdm.lock within the build environment.
+# Install remaining project dependencies using PDM.
+# llama-cpp-python should already be installed by uv pip.
 RUN pdm install -vv --prod --no-editable
 
 # Copy the rest of your application source code
