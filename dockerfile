@@ -28,9 +28,8 @@ RUN ln -sf /usr/bin/python3.10 /usr/bin/python && \
 # Install PDM
 RUN pip install --no-cache-dir pdm
 
-# Copy project files
-# First copy only the files PDM needs to resolve and install dependencies
-COPY pyproject.toml pdm.lock ./
+# Copy project configuration
+COPY pyproject.toml ./
 
 # Set CMAKE_ARGS to build llama-cpp-python with CUDA support.
 # This must be set *before* pdm install if llama-cpp-python is compiled during install.
@@ -38,9 +37,8 @@ ENV CMAKE_ARGS="-DLLAMA_CUDA=ON"
 ENV FORCE_CMAKE=1
 
 # Install project dependencies using PDM.
-# --prod: Install only production dependencies (omits dev-dependencies).
-# --no-editable: Install packages normally, not in editable mode.
-# PDM automatically creates and uses a virtual environment within the project's .venv directory
+# PDM will use pyproject.toml. If pdm.lock is not found (because we removed the COPY for it),
+# PDM will resolve dependencies and create pdm.lock within the build environment.
 RUN pdm install --prod --no-editable
 
 # Copy the rest of your application source code
