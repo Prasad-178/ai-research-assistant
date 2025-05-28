@@ -33,8 +33,18 @@ COPY pyproject.toml ./
 
 # Set CMAKE_ARGS to build llama-cpp-python with CUDA support.
 # This must be set *before* pdm install if llama-cpp-python is compiled during install.
-ENV CMAKE_ARGS="-DLLAMA_CUDA=ON"
+ENV CMAKE_ARGS="-DGGML_CUDA=ON"
 ENV FORCE_CMAKE=1
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
+
+# Ensure libcuda.so.1 can be found by the linker by creating a symlink to libcuda.so.
+# The nvidia/cuda devel images provide /usr/local/cuda/lib64/libcuda.so (pointing to a stub library).
+RUN if [ -f /usr/local/cuda/lib64/libcuda.so ]; then \
+        ln -sf /usr/local/cuda/lib64/libcuda.so /usr/local/cuda/lib64/libcuda.so.1 && \
+        echo "Successfully symlinked /usr/local/cuda/lib64/libcuda.so to /usr/local/cuda/lib64/libcuda.so.1"; \
+    else \
+        echo "Warning: /usr/local/cuda/lib64/libcuda.so not found. Cannot create libcuda.so.1 symlink. This might lead to build issues."; \
+    fi
 
 # Install project dependencies using PDM with increased verbosity.
 # PDM will use pyproject.toml. If pdm.lock is not found (because we removed the COPY for it),
