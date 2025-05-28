@@ -36,10 +36,10 @@ COPY pyproject.toml ./
 ENV CMAKE_ARGS="-DLLAMA_CUDA=ON"
 ENV FORCE_CMAKE=1
 
-# Install project dependencies using PDM.
+# Install project dependencies using PDM with increased verbosity.
 # PDM will use pyproject.toml. If pdm.lock is not found (because we removed the COPY for it),
 # PDM will resolve dependencies and create pdm.lock within the build environment.
-RUN pdm install --prod --no-editable
+RUN pdm install -vvv --prod --no-editable
 
 # Copy the rest of your application source code
 # If api.py is in src/, copy the src directory
