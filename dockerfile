@@ -2,7 +2,6 @@
 # and your g4dn.xlarge instance (Tesla T4 typically supports CUDA 11.x, 12.x).
 # Check llama-cpp-python's documentation for recommended CUDA versions.
 FROM nvidia/cuda:12.2.2-devel-ubuntu22.04
-
 # Set environment variables to prevent interactive prompts during package installations
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
@@ -44,7 +43,7 @@ COPY pyproject.toml ./
 ENV CUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda
 # Set LD_LIBRARY_PATH in a single layer to ensure proper expansion.
 # This includes CUDA paths and GCC library paths as suggested by the GitHub issue.
-RUN LLAMA_CPP_PYTHON_VERSION="0.3.8" && \
+RUN LLAMA_CPP_PYTHON_VERSION="0.3.9" && \
     GCC_LIB_PATH="/usr/lib/gcc/$(gcc -dumpmachine)/$(gcc -dumpversion)" && \
     export LD_LIBRARY_PATH="/usr/local/cuda/lib64:/usr/local/cuda/lib64/stubs:${GCC_LIB_PATH}:${LD_LIBRARY_PATH}" && \
     echo "Updated LD_LIBRARY_PATH: $LD_LIBRARY_PATH" && \
@@ -60,12 +59,8 @@ RUN LLAMA_CPP_PYTHON_VERSION="0.3.8" && \
     echo "CC: ${CC}" && \
     echo "CXX: ${CXX}" && \
     \
-    # Install llama-cpp-python using uv pip, strictly following GitHub issue's successful approach
-    # All environment variables for this specific install are set within this RUN command's scope
-    uv pip install --system --upgrade --no-cache --force-reinstall "llama-cpp-python[server]==${LLAMA_CPP_PYTHON_VERSION}" \
-        --index-url https://pypi.org/simple \
-        --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu122/ \
-        --index-strategy unsafe-best-match && \
+    # Install llama-cpp-python using uv pip, following latest GitHub issue success
+    uv pip install --no-cache --force-reinstall "llama-cpp-python[server]==${LLAMA_CPP_PYTHON_VERSION}" && \
     \
     # Verify llama-cpp-python installation
     echo "Verifying llama-cpp-python installation..." && \
