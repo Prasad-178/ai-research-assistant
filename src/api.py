@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI):
 
         model_kwargs = {
             "pretrained_model_name_or_path": LOCAL_MODEL_PATH,
-            "torch_dtype": torch.float16,
+            # Default to None, will be set based on device
         }
 
         if torch.cuda.is_available():
@@ -98,10 +98,11 @@ async def lifespan(app: FastAPI):
             quantization_config = BitsAndBytesConfig(load_in_8bit=True)
             model_kwargs["quantization_config"] = quantization_config
             model_kwargs["device_map"] = "auto"
+            model_kwargs["torch_dtype"] = torch.float16 # Use float16 for GPU
         else:
-            logger.warning("CUDA not available. Loading model on CPU without 8-bit quantization. This will be slower and consume more RAM.")
+            logger.warning("CUDA not available. Loading model on CPU. Using float32 for stability. This will be slower and consume more RAM.")
             model_kwargs["device_map"] = "cpu"
-            # Explicitly remove quantization_config if CUDA is not available
+            model_kwargs["torch_dtype"] = torch.float32 # Use float32 for CPU for better stability
             if "quantization_config" in model_kwargs:
                 del model_kwargs["quantization_config"]
 
@@ -109,7 +110,7 @@ async def lifespan(app: FastAPI):
         logger.info(f"Loading Hugging Face model from {LOCAL_MODEL_PATH} with arguments: { {k: v for k, v in model_kwargs.items() if k != 'pretrained_model_name_or_path'} }")
         
         model = AutoModelForCausalLM.from_pretrained(**model_kwargs)
-        logger.info(f"Hugging Face Model loaded successfully on device: {model.device}.")
+        logger.info(f"Hugging Face Model loaded successfully on device: {model.device} with dtype: {model.dtype}.") # Log dtype
         
         llm_globals['tokenizer'] = tokenizer
         llm_globals['model'] = model
@@ -149,29 +150,26 @@ async def infer_endpoint(request: PromptRequest):
     logger.info(f"Received inference request: prompt='{request.prompt[:50]}...', max_new_tokens={request.max_new_tokens}")
     
     try:
-        # Prepare inputs for the model
-        # The Qwen1.5 chat model expects a specific chat format.
-        # For simplicity here, we'll just pass the raw prompt, but for optimal results,
-        # you should use tokenizer.apply_chat_template if you have a chat interaction.
         messages = [{"role": "user", "content": request.prompt}]
         text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         
-        model_inputs = tokenizer([text], return_tensors="pt").to(model.device)
+        # Ensure tokenizer generates attention_mask and send it to the model's device
+        model_inputs = tokenizer([text], return_tensors="pt", return_attention_mask=True) # Added return_attention_mask=True
+        input_ids = model_inputs.input_ids.to(model.device)
+        attention_mask = model_inputs.attention_mask.to(model.device) # Get attention_mask and send to device
 
         # Generate output
         generated_ids = model.generate(
-            model_inputs.input_ids,
+            input_ids,                        # Pass input_ids
+            attention_mask=attention_mask,    # Pass attention_mask
             max_new_tokens=request.max_new_tokens,
             temperature=request.temperature,
             top_p=request.top_p,
-            pad_token_id=tokenizer.eos_token_id # Important for generation
-            # Add other relevant generation parameters here
+            pad_token_id=tokenizer.eos_token_id
         )
         
         # Decode the generated tokens, excluding the input prompt
-        # generated_ids contains the full sequence (input + output)
-        # We need to slice it to get only the new tokens
-        response_text = tokenizer.decode(generated_ids[0][model_inputs.input_ids.shape[1]:], skip_special_tokens=True)
+        response_text = tokenizer.decode(generated_ids[0][input_ids.shape[1]:], skip_special_tokens=True)
         
         logger.info(f"Inference successful. Response: '{response_text[:50]}...'")
         return {"response": response_text.strip()}
