@@ -4,7 +4,7 @@ import os
 import boto3
 import logging
 from contextlib import asynccontextmanager
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 import torch
 
 # Configure logging
@@ -63,14 +63,12 @@ async def lifespan(app: FastAPI):
     logger.info("Application startup: Loading Hugging Face model...")
 
     if not MODEL_S3_BUCKET or not MODEL_S3_KEY_PREFIX:
-        logger.error("MODEL_S3_BUCKET or MODEL_S3_KEY (prefix) environment variables not set.")
+        logger.error("MODEL_S3_BUCKET or MODEL_S3_KEY_PREFIX environment variables not set.")
         raise RuntimeError("S3 Bucket or Key prefix not configured for model download.")
 
     os.makedirs(LOCAL_MODEL_PATH, exist_ok=True)
     logger.info(f"Model directory {LOCAL_MODEL_PATH} ensured.")
 
-    # Download model files from S3 if the directory seems empty or incomplete
-    # A simple check: if config.json doesn't exist, try downloading.
     if not os.path.exists(os.path.join(LOCAL_MODEL_PATH, "config.json")):
         logger.info(f"Model files not found locally or incomplete at {LOCAL_MODEL_PATH}. Downloading from S3: s3://{MODEL_S3_BUCKET}/{MODEL_S3_KEY_PREFIX}")
         try:
@@ -90,22 +88,33 @@ async def lifespan(app: FastAPI):
         tokenizer = AutoTokenizer.from_pretrained(LOCAL_MODEL_PATH)
         logger.info("Tokenizer loaded successfully.")
 
-        logger.info(f"Loading Hugging Face model from {LOCAL_MODEL_PATH} with 8-bit quantization and device_map='auto'...")
-        # device_map="auto" requires accelerate
-        # load_in_8bit=True requires bitsandbytes
+        model_load_args = {
+            "torch_dtype": torch.float16,
+        }
+
+        if torch.cuda.is_available():
+            logger.info("CUDA is available. Attempting to load model with 8-bit quantization on GPU.")
+            # For 8-bit quantization
+            quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+            model_load_args["quantization_config"] = quantization_config
+            model_load_args["device_map"] = "auto" # Automatically uses CUDA if available
+        else:
+            logger.warning("CUDA not available. Loading model on CPU without 8-bit quantization. This will be slower and consume more RAM.")
+            model_load_args["device_map"] = "cpu" # Explicitly load to CPU
+
+        logger.info(f"Loading Hugging Face model from {LOCAL_MODEL_PATH} with arguments: {model_load_args}")
+        
         model = AutoModelForCausalLM.from_pretrained(
             LOCAL_MODEL_PATH,
-            device_map="auto", # Automatically uses CUDA if available and mapped by accelerate
-            load_in_8bit=True, # For 8-bit quantization
-            torch_dtype=torch.float16 # Recommended for inference with Qwen
+            **model_load_args
         )
-        logger.info("Hugging Face Model loaded successfully.")
+        logger.info(f"Hugging Face Model loaded successfully on device: {model.device}.")
         
         llm_globals['tokenizer'] = tokenizer
         llm_globals['model'] = model
         
     except Exception as e:
-        logger.error(f"Fatal error loading Hugging Face model or tokenizer: {e}")
+        logger.error(f"Fatal error loading Hugging Face model or tokenizer: {e}", exc_info=True)
         raise RuntimeError(f"Failed to load model/tokenizer: {e}")
     
     yield # Application runs after this yield
