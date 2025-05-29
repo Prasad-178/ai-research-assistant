@@ -5,7 +5,7 @@
 groups = ["default"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:d0013c393b5a44938bcae8ae1d6124eeb444be277d418713793a820934d44497"
+content_hash = "sha256:fa0c0092211a7977f5df95922af3982dcbcf7391d664728f2e593cac2e28a698"
 
 [[metadata.targets]]
 requires_python = "==3.10.*"
@@ -369,6 +369,20 @@ groups = ["default"]
 files = [
     {file = "idna-3.10-py3-none-any.whl", hash = "sha256:946d195a0d259cbba61165e88e65941f16e9b36ea6ddb97f00452bae8b1287d3"},
     {file = "idna-3.10.tar.gz", hash = "sha256:12f65c9b470abda6dc35cf8e63cc574b1c52b11df2c86030af0ac09b01b13ea9"},
+]
+
+[[package]]
+name = "intel-extension-for-pytorch"
+version = "2.7.0"
+summary = "Intel® Extension for PyTorch*"
+groups = ["default"]
+dependencies = [
+    "numpy",
+    "packaging",
+    "psutil",
+]
+files = [
+    {file = "intel_extension_for_pytorch-2.7.0-cp310-cp310-manylinux_2_28_x86_64.whl", hash = "sha256:aa0a47d0d7def0d0ef7f6f1a2e4978266e62fa54e753685d8533cf98c214b525"},
 ]
 
 [[package]]

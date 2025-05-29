@@ -88,26 +88,27 @@ async def lifespan(app: FastAPI):
         tokenizer = AutoTokenizer.from_pretrained(LOCAL_MODEL_PATH)
         logger.info("Tokenizer loaded successfully.")
 
-        model_load_args = {
+        model_kwargs = {
+            "pretrained_model_name_or_path": LOCAL_MODEL_PATH,
             "torch_dtype": torch.float16,
         }
 
         if torch.cuda.is_available():
             logger.info("CUDA is available. Attempting to load model with 8-bit quantization on GPU.")
-            # For 8-bit quantization
             quantization_config = BitsAndBytesConfig(load_in_8bit=True)
-            model_load_args["quantization_config"] = quantization_config
-            model_load_args["device_map"] = "auto" # Automatically uses CUDA if available
+            model_kwargs["quantization_config"] = quantization_config
+            model_kwargs["device_map"] = "auto"
         else:
             logger.warning("CUDA not available. Loading model on CPU without 8-bit quantization. This will be slower and consume more RAM.")
-            model_load_args["device_map"] = "cpu" # Explicitly load to CPU
+            model_kwargs["device_map"] = "cpu"
+            # Explicitly remove quantization_config if CUDA is not available
+            if "quantization_config" in model_kwargs:
+                del model_kwargs["quantization_config"]
 
-        logger.info(f"Loading Hugging Face model from {LOCAL_MODEL_PATH} with arguments: {model_load_args}")
+
+        logger.info(f"Loading Hugging Face model from {LOCAL_MODEL_PATH} with arguments: { {k: v for k, v in model_kwargs.items() if k != 'pretrained_model_name_or_path'} }")
         
-        model = AutoModelForCausalLM.from_pretrained(
-            LOCAL_MODEL_PATH,
-            **model_load_args
-        )
+        model = AutoModelForCausalLM.from_pretrained(**model_kwargs)
         logger.info(f"Hugging Face Model loaded successfully on device: {model.device}.")
         
         llm_globals['tokenizer'] = tokenizer
