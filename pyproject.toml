@@ -12,7 +12,11 @@ dependencies = [
     "uvicorn[standard]>=0.23.0",
     "boto3>=1.28.0",
     "pydantic>=2.0.0",
-    "python-dotenv>=1.0.0"
+    "python-dotenv>=1.0.0",
+    "transformers>=4.40.0",
+    "torch>=2.1.0",
+    "accelerate>=0.29.0",
+    "bitsandbytes>=0.41.0"
 ]
 requires-python = "==3.10.*"
 readme = "README.md"
