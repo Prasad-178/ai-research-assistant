@@ -1,5 +1,5 @@
 # Use an NVIDIA CUDA base image.
-FROM nvidia/cuda:12.6.0-devel-ubuntu22.04
+FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
 # Set environment variables to prevent interactive prompts during package installations
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
