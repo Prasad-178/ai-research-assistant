@@ -94,23 +94,40 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
    
       - name: Send command to EC2 to update Docker container
-        # This uses AWS Systems Manager Run Command, which is generally safer
-        # Requires SSM Agent on EC2 and IAM permissions for ssm:SendCommand
         run: |
           aws ssm send-command \
             --instance-ids ${{ secrets.EC2_INSTANCE_ID }} \
             --document-name "AWS-RunShellScript" \
-            --comment "Restarting Docker container with new image from GitHub Actions" \
+            --comment "Converge state and restart Docker container from GitHub Actions" \
             --parameters '{"commands": [
-              "echo \"--- Starting EC2 deployment script ---\"",
-              "docker --version",
-              "echo \"Pulling latest image: ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest\"",
-              "docker pull ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest",
-              "echo \"Stopping existing container for image: ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}\"",
-              "docker ps -q --filter ancestor=${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }} | xargs -r docker stop",
-              "docker ps -aq --filter ancestor=${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }} | xargs -r docker rm",
-              "echo \"Running new container with image: ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest\"",
-              "docker run -d -p 8000:8000 --name mlops_llm_app_container --restart unless-stopped -e MODEL_S3_BUCKET=${{ secrets.MODEL_S3_BUCKET }} -e MODEL_S3_KEY=${{ secrets.MODEL_S3_KEY_PREFIX }} ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest",
-              "echo \"--- EC2 deployment script finished ---\""
+              "echo \"--- [Step 1/5] Checking and Installing Docker ---\"",
+              "if ! command -v docker &> /dev/null; then",
+              "  echo \"Docker not found. Installing Docker...\"",
+              "  if grep -q 'VERSION_ID=\"2\"' /etc/os-release; then",
+              "    echo \"Detected Amazon Linux 2. Installing with amazon-linux-extras.\"",
+              "    yum update -y",
+              "    amazon-linux-extras install docker -y",
+              "  elif grep -q 'VERSION_ID=\"2023\"' /etc/os-release; then",
+              "    echo \"Detected Amazon Linux 2023. Installing with yum.\"",
+              "    yum update -y",
+              "    yum install docker -y",
+              "  else",
+              "    echo \"Unsupported OS for automatic Docker installation.\" && exit 1",
+              "  fi",
+              "else",
+              "  echo \"Docker is already installed.\"",
+              "fi",
+              "echo \"--- [Step 2/5] Starting and Enabling Docker Service ---\"",
+              "systemctl start docker",
+              "systemctl enable docker",
+              "echo \"--- [Step 3/5] Configuring User Permissions ---\"",
+              "usermod -aG docker ec2-user",
+              "echo \"--- [Step 4/5] Pulling new image and redeploying container ---\"",
+              "/usr/bin/docker --version",
+              "/usr/bin/docker pull ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest",
+              "/usr/bin/docker ps -q --filter name=mlops_llm_app_container | xargs -r /usr/bin/docker stop",
+              "/usr/bin/docker ps -aq --filter name=mlops_llm_app_container | xargs -r /usr/bin/docker rm",
+              "/usr/bin/docker run -d -p 8000:8000 --name mlops_llm_app_container --restart unless-stopped -e MODEL_S3_BUCKET=${{ secrets.MODEL_S3_BUCKET }} -e MODEL_S3_KEY=${{ secrets.MODEL_S3_KEY_PREFIX }} ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest",
+              "echo \"--- [Step 5/5] Deployment script finished ---\""
             ]}' \
             --output text
