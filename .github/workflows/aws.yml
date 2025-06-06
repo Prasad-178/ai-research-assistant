@@ -101,21 +101,16 @@ jobs:
             --instance-ids ${{ secrets.EC2_INSTANCE_ID }} \
             --document-name "AWS-RunShellScript" \
             --comment "Restarting Docker container with new image from GitHub Actions" \
-            --parameters commands="
-              echo '--- Starting EC2 deployment script ---'
-              docker --version
-              echo 'Pulling latest image: ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest'
-              docker pull ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest
-              echo 'Stopping existing container for image: ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}'
-              docker ps -q --filter ancestor=${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }} | xargs -r docker stop
-              docker ps -aq --filter ancestor=${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }} | xargs -r docker rm
-              echo 'Running new container with image: ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest'
-              docker run -d -p 8000:8000 \
-                -e MODEL_S3_BUCKET='${{ secrets.MODEL_S3_BUCKET }}' \
-                -e MODEL_S3_KEY='${{ secrets.MODEL_S3_KEY_PREFIX }}' \
-                --restart unless-stopped \
-                --name mlops_llm_app_container \
-                ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest
-              echo '--- EC2 deployment script finished ---'
-            " \
+            --parameters '{"commands": [
+              "echo \"--- Starting EC2 deployment script ---\"",
+              "docker --version",
+              "echo \"Pulling latest image: ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest\"",
+              "docker pull ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest",
+              "echo \"Stopping existing container for image: ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}\"",
+              "docker ps -q --filter ancestor=${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }} | xargs -r docker stop",
+              "docker ps -aq --filter ancestor=${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }} | xargs -r docker rm",
+              "echo \"Running new container with image: ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest\"",
+              "docker run -d -p 8000:8000 --name mlops_llm_app_container --restart unless-stopped -e MODEL_S3_BUCKET=${{ secrets.MODEL_S3_BUCKET }} -e MODEL_S3_KEY=${{ secrets.MODEL_S3_KEY_PREFIX }} ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest",
+              "echo \"--- EC2 deployment script finished ---\""
+            ]}' \
             --output text
