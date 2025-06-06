@@ -1,4 +1,4 @@
-name: Backend CI/CD
+name: AWS CI/CD
 
 on:
   push:
@@ -34,21 +34,15 @@ jobs:
       - name: Build, tag, and push image to Amazon ECR Public
         id: build-image
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr-public.outputs.registry }} # This should be public.ecr.aws
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_NAME }} # e.g., prasadjs178/mlops-project
-          IMAGE_TAG: latest # You can use github.sha for unique tags
+          ECR_REGISTRY: ${{ steps.login-ecr-public.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_NAME }}
+          IMAGE_TAG: latest
         run: |
           echo "ECR Registry: $ECR_REGISTRY"
           echo "ECR Repository: $ECR_REPOSITORY"
-          # The ECR_REGISTRY output from aws-actions/amazon-ecr-login@v2 for public is just 'public.ecr.aws'
-          # The ECR_REPOSITORY_NAME from secrets should be 'your-alias/your-repo-name' e.g. 'x5h9x8z0/prasadjs178/mlops-project'
-          # So, the full ECR path for public ECR will be: public.ecr.aws/${{ secrets.ECR_REPOSITORY_NAME }}
-          # However, the aws-actions/amazon-ecr-login action is primarily for private ECR.
-          # For Public ECR, we need to ensure the docker tag and push commands are correct.
           
-          # Let's construct the full ECR image URI correctly for ECR Public
-          ECR_PUBLIC_ALIAS=${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }} # e.g. public.ecr.aws/x5h9x8z0
-          FULL_ECR_IMAGE_URI="${ECR_PUBLIC_ALIAS}/${ECR_REPOSITORY}" # e.g. public.ecr.aws/x5h9x8z0/prasadjs178/mlops-project
+          ECR_PUBLIC_ALIAS=${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}
+          FULL_ECR_IMAGE_URI="${ECR_PUBLIC_ALIAS}/${ECR_REPOSITORY}"
 
           echo "Building image: $FULL_ECR_IMAGE_URI:$IMAGE_TAG"
           docker build -t $FULL_ECR_IMAGE_URI:$IMAGE_TAG .
@@ -86,36 +80,42 @@ jobs:
   #       run: |
   #         # pdm run pytest
 
-  # --- Optional: Deploy to EC2 ---
-  # deploy-to-ec2:
-  #   name: Deploy to EC2
-  #   needs: build-and-push-ecr # Run after image is pushed
-  #   runs-on: ubuntu-latest
-  #   if: github.event_name == 'push' && github.ref == 'refs/heads/main' # Only on pushes to main
-  #   steps:
-  #     - name: Configure AWS credentials
-  #       uses: aws-actions/configure-aws-credentials@v4
-  #       with:
-  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  #         aws-region: ${{ secrets.AWS_REGION }}
-  
-  #     - name: Send command to EC2 to update Docker container
-  #       # This uses AWS Systems Manager Run Command, which is generally safer
-  #       # Requires SSM Agent on EC2 and IAM permissions for ssm:SendCommand
-  #       run: |
-  #         aws ssm send-command \
-  #           --instance-ids ${{ secrets.EC2_INSTANCE_ID }} \
-  #           --document-name "AWS-RunShellScript" \
-  #           --comment "Restarting Docker container with new image" \
-  #           --parameters commands="
-  #             cd /home/ec2-user && \
-  #             docker pull ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest && \
-  #             docker stop \$(docker ps -q --filter ancestor=${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest) && \
-  #             docker run -d -p 8000:8000 \
-  #               -e MODEL_S3_BUCKET='${{ secrets.MODEL_S3_BUCKET }}' \
-  #               -e MODEL_S3_KEY='${{ secrets.MODEL_S3_KEY_PREFIX }}' \
-  #               --restart unless-stopped \
-  #               ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest
-  #           " \
-  #           --output text
+  deploy-to-ec2:
+    name: Deploy to EC2
+    needs: build-and-push-ecr
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+   
+      - name: Send command to EC2 to update Docker container
+        # This uses AWS Systems Manager Run Command, which is generally safer
+        # Requires SSM Agent on EC2 and IAM permissions for ssm:SendCommand
+        run: |
+          aws ssm send-command \
+            --instance-ids ${{ secrets.EC2_INSTANCE_ID }} \
+            --document-name "AWS-RunShellScript" \
+            --comment "Restarting Docker container with new image from GitHub Actions" \
+            --parameters commands="
+              echo '--- Starting EC2 deployment script ---'
+              docker --version
+              echo 'Pulling latest image: ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest'
+              docker pull ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest
+              echo 'Stopping existing container for image: ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}'
+              docker ps -q --filter ancestor=${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }} | xargs -r docker stop
+              docker ps -aq --filter ancestor=${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }} | xargs -r docker rm
+              echo 'Running new container with image: ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest'
+              docker run -d -p 8000:8000 \
+                -e MODEL_S3_BUCKET='${{ secrets.MODEL_S3_BUCKET }}' \
+                -e MODEL_S3_KEY='${{ secrets.MODEL_S3_KEY_PREFIX }}' \
+                --restart unless-stopped \
+                --name mlops_llm_app_container \
+                ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest
+              echo '--- EC2 deployment script finished ---'
+            " \
+            --output text
