@@ -10,6 +10,12 @@ variable "project_name" {
   default     = "ai-research-assistant"
 }
 
+variable "project_name_short" {
+  description = "A short name or abbreviation for the project, used for resource naming."
+  type        = string
+  default     = "ara"
+}
+
 variable "ecr_image_uri" {
   description = "The full URI of the Docker image in ECR including the tag (e.g., public.ecr.aws/alias/repo:latest)."
   type        = string

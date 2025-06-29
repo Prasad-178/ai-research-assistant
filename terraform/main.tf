@@ -5,9 +5,10 @@
 
 # --- Unique Suffix for Naming ---
 # This ensures that resource names are unique for each deployment,
-# preventing collisions from failed pipeline runs.
-resource "random_pet" "suffix" {
-  length = 2
+# preventing collisions from failed pipeline runs. We use a short random ID
+# to stay within the 32-character name limit for some AWS resources.
+resource "random_id" "suffix" {
+  byte_length = 4 # Creates an 8-character hex string
 }
 
 # --- Networking (VPC and Subnets) ---
@@ -32,7 +33,7 @@ resource "aws_ecs_cluster" "ml_app_cluster" {
 # --- Application Load Balancer (ALB) ---
 # This will expose our service to the internet on port 80.
 resource "aws_lb" "ml_app_lb" {
-  name               = "${var.project_name}-lb-${random_pet.suffix.id}"
+  name               = "${var.project_name_short}-lb-${random_id.suffix.hex}"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.lb_sg.id]
@@ -44,7 +45,7 @@ resource "aws_lb" "ml_app_lb" {
 }
 
 resource "aws_lb_target_group" "ml_app_tg" {
-  name        = "${var.project_name}-tg-${random_pet.suffix.id}"
+  name        = "${var.project_name_short}-tg-${random_id.suffix.hex}"
   port        = 8000 # The port the container listens on
   protocol    = "HTTP"
   vpc_id      = data.aws_vpc.default.id
@@ -75,7 +76,7 @@ resource "aws_lb_listener" "http" {
 # --- Security Groups ---
 # Security group for the Load Balancer
 resource "aws_security_group" "lb_sg" {
-  name        = "${var.project_name}-lb-sg-${random_pet.suffix.id}"
+  name        = "${var.project_name_short}-lb-sg-${random_id.suffix.hex}"
   description = "Allow HTTP traffic to Load Balancer"
   vpc_id      = data.aws_vpc.default.id
 
@@ -96,7 +97,7 @@ resource "aws_security_group" "lb_sg" {
 
 # Security group for the ECS Tasks
 resource "aws_security_group" "ecs_tasks_sg" {
-  name        = "${var.project_name}-tasks-sg-${random_pet.suffix.id}"
+  name        = "${var.project_name_short}-tasks-sg-${random_id.suffix.hex}"
   description = "Allow traffic from the Load Balancer to the ECS tasks"
   vpc_id      = data.aws_vpc.default.id
 
@@ -120,7 +121,7 @@ resource "aws_security_group" "ecs_tasks_sg" {
 # --- IAM Roles ---
 # Role for ECS tasks to access other AWS services (like S3)
 resource "aws_iam_role" "ecs_task_role" {
-  name = "${var.project_name}-ecs-task-role-${random_pet.suffix.id}"
+  name = "${var.project_name_short}-ecs-task-role-${random_id.suffix.hex}"
   assume_role_policy = jsonencode({
     Version   = "2012-10-17",
     Statement = [{
@@ -135,7 +136,7 @@ resource "aws_iam_role" "ecs_task_role" {
 
 # Policy allowing tasks to access the S3 model bucket
 resource "aws_iam_policy" "s3_access_policy" {
-  name = "${var.project_name}-s3-access-policy-${random_pet.suffix.id}"
+  name = "${var.project_name_short}-s3-access-policy-${random_id.suffix.hex}"
   policy = jsonencode({
     Version   = "2012-10-17",
     Statement = [
@@ -161,7 +162,7 @@ resource "aws_iam_role_policy_attachment" "task_s3_access" {
 
 # Role for ECS to execute tasks (pulling images, etc.)
 resource "aws_iam_role" "ecs_task_execution_role" {
-  name = "${var.project_name}-ecs-task-execution-role-${random_pet.suffix.id}"
+  name = "${var.project_name_short}-ecs-task-execution-role-${random_id.suffix.hex}"
   assume_role_policy = jsonencode({
     Version   = "2012-10-17",
     Statement = [{
