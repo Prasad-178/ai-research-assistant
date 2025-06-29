@@ -1,14 +1,23 @@
-name: Build and Push to AWS ECR
+name: Deploy Backend to ECR and ECS
 
 on:
   push:
     branches:
       - main
 
+# These environment variables are shared across all jobs
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY_NAME: ${{ secrets.ECR_REPOSITORY_NAME }}
+  ECR_PUBLIC_ALIAS: ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}
+
 jobs:
-  build-and-push-ecr:
-    name: Build and Push to ECR
+  build-and-push-to-ecr:
+    name: Build and Push Docker Image to ECR
     runs-on: ubuntu-latest
+    outputs:
+      image_uri: ${{ steps.build-image.outputs.image }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -18,22 +27,59 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR Public
-        id: login-ecr-public
         uses: aws-actions/amazon-ecr-login@v2
         with:
           registry-type: public
 
-      - name: Build, tag, and push image to Amazon ECR Public
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
         id: build-image
-        env:
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_NAME }}
-          ECR_PUBLIC_ALIAS: ${{ secrets.ECR_PUBLIC_REGISTRY_ALIAS }}
-          IMAGE_TAG: latest
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          # This is the crucial part for building for the right architecture
+          platforms: linux/amd64 
+          tags: ${{ env.ECR_PUBLIC_ALIAS }}/${{ env.ECR_REPOSITORY_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-to-ecs:
+    name: Deploy Infrastructure with Terraform
+    needs: build-and-push-to-ecr # This job runs only after the image is pushed
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        id: init
+        run: terraform -chdir=./terraform init
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform -chdir=./terraform validate
+
+      - name: Terraform Apply
+        id: apply
         run: |
-          FULL_ECR_IMAGE_URI="${ECR_PUBLIC_ALIAS}/${ECR_REPOSITORY}"
-          echo "Building and pushing image to $FULL_ECR_IMAGE_URI:$IMAGE_TAG"
-          docker build -t $FULL_ECR_IMAGE_URI:$IMAGE_TAG .
-          docker push $FULL_ECR_IMAGE_URI:$IMAGE_TAG
+          terraform -chdir=./terraform apply -auto-approve \
+            -var="ecr_image_uri=${{ needs.build-and-push-to-ecr.outputs.image_uri }}" \
+            -var="model_s3_bucket=${{ secrets.MODEL_S3_BUCKET }}" \
+            -var="model_s3_key_prefix=${{ secrets.MODEL_S3_KEY_PREFIX }}"
