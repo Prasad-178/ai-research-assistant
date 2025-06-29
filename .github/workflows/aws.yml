@@ -16,7 +16,7 @@ jobs:
     name: Build and Push Docker Image to ECR
     runs-on: ubuntu-latest
     outputs:
-      image_uri: ${{ env.ECR_PUBLIC_ALIAS }}/${{ env.ECR_REPOSITORY_NAME }}:latest
+      image_digest: ${{ steps.build-image.outputs.digest }}
 
     steps:
       - name: Checkout repository
@@ -53,7 +53,6 @@ jobs:
         with:
           context: .
           push: true
-          # This is the crucial part for building for the right architecture
           platforms: linux/amd64 
           tags: ${{ env.ECR_PUBLIC_ALIAS }}/${{ env.ECR_REPOSITORY_NAME }}:latest
           cache-from: type=gha
@@ -61,7 +60,7 @@ jobs:
 
   deploy-to-ecs:
     name: Deploy Infrastructure with Terraform
-    needs: build-and-push-to-ecr # This job runs only after the image is pushed
+    needs: build-and-push-to-ecr
     runs-on: ubuntu-latest
 
     steps:
@@ -89,7 +88,8 @@ jobs:
       - name: Terraform Apply
         id: apply
         run: |
+          IMAGE_URI_WITH_DIGEST="${{ env.ECR_PUBLIC_ALIAS }}/${{ env.ECR_REPOSITORY_NAME }}@${{ needs.build-and-push-to-ecr.outputs.image_digest }}"
           terraform -chdir=./terraform apply -auto-approve \
-            -var="ecr_image_uri=${{ needs.build-and-push-to-ecr.outputs.image_uri }}" \
+            -var="ecr_image_uri=${IMAGE_URI_WITH_DIGEST}" \
             -var="model_s3_bucket=${{ secrets.MODEL_S3_BUCKET }}" \
             -var="model_s3_key_prefix=${{ secrets.MODEL_S3_KEY_PREFIX }}"
