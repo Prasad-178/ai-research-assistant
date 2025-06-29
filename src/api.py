@@ -131,6 +131,11 @@ async def lifespan(app: FastAPI):
 # --- FastAPI App Initialization ---
 app = FastAPI(title="LLM Inference API with HuggingFace", version="1.1.0", lifespan=lifespan)
 
+@app.get("/", include_in_schema=False)
+async def root():
+    """A simple endpoint to confirm the server is running."""
+    return {"message": "Server is running."}
+
 class PromptRequest(BaseModel):
     prompt: str
     max_new_tokens: int = 150 # Changed from max_tokens
